@@ -20,10 +20,11 @@ import (
 func TestIntegration_OCR2DR_MultipleRequests_Success(t *testing.T) {
 	// a batch of 8 max-length results uses around 1M gas (assuming 70k gas per client callback - see FunctionsClientExample.sol)
 	nOracleNodes := 4
-	nClients := 50
+	nClients := 100
 	requestLenBytes := 1000
 	maxGas := 1_300_000
 	batchSize := 8
+	var iterations int64 = 3
 
 	// simulated chain with all contracts
 	owner, b, ticker, oracleContractAddress, oracleContract, clientContracts, registryAddress, registryContract, linkToken := utils.StartNewChainWithContracts(t, nClients)
@@ -60,45 +61,47 @@ func TestIntegration_OCR2DR_MultipleRequests_Success(t *testing.T) {
 	utils.CommitWithFinality(b)
 
 	// set up subscription
-	subscriptionId := utils.CreateAndFundSubscriptions(t, owner, linkToken, registryAddress, registryContract, clientContracts)
+	subscriptionId := utils.CreateAndFundSubscriptions(t, owner, linkToken, registryAddress, registryContract, clientContracts, iterations)
 
-	// send requests
-	requestSources := make([][]byte, nClients)
-	rnd := rand.New(rand.NewSource(666))
-	for i := 0; i < nClients; i++ {
-		requestSources[i] = make([]byte, requestLenBytes)
-		for j := 0; j < requestLenBytes; j++ {
-			requestSources[i][j] = byte(rnd.Uint32() % 256)
+	for i := 0; i < int(iterations); i++ {
+		// send requests
+		requestSources := make([][]byte, nClients)
+		rnd := rand.New(rand.NewSource(666))
+		for i := 0; i < nClients; i++ {
+			requestSources[i] = make([]byte, requestLenBytes)
+			for j := 0; j < requestLenBytes; j++ {
+				requestSources[i][j] = byte(rnd.Uint32() % 256)
+			}
+			_, err := clientContracts[i].Contract.SendRequest(owner, hex.EncodeToString(requestSources[i]), []byte{}, []string{}, subscriptionId)
+			require.NoError(t, err)
 		}
-		_, err := clientContracts[i].Contract.SendRequest(owner, hex.EncodeToString(requestSources[i]), []byte{}, []string{}, subscriptionId)
-		require.NoError(t, err)
-	}
-	utils.CommitWithFinality(b)
+		utils.CommitWithFinality(b)
 
-	// validate that all DR-OCR jobs completed as many runs as sent requests
-	var wg sync.WaitGroup
-	for i := 0; i < nOracleNodes; i++ {
-		ic := i
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			cltest.WaitForPipelineComplete(t, ic, jobIds[ic], nClients, 5, apps[ic].JobORM(), 1*time.Minute, 1*time.Second)
-		}()
-	}
-	wg.Wait()
+		// validate that all DR-OCR jobs completed as many runs as sent requests
+		var wg sync.WaitGroup
+		for i := 0; i < nOracleNodes; i++ {
+			ic := i
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				cltest.WaitForPipelineComplete(t, ic, jobIds[ic], nClients, 5, apps[ic].JobORM(), 1*time.Minute, 1*time.Second)
+			}()
+		}
+		wg.Wait()
 
-	// validate that all client contracts got correct responses to their requests
-	for i := 0; i < nClients; i++ {
-		ic := i
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			gomega.NewGomegaWithT(t).Eventually(func() [32]byte {
-				answer, err := clientContracts[ic].Contract.LastResponse(nil)
-				require.NoError(t, err)
-				return answer
-			}, 1*time.Minute, 1*time.Second).Should(gomega.Equal(utils.GetExpectedResponse(requestSources[ic])))
-		}()
+		// validate that all client contracts got correct responses to their requests
+		for i := 0; i < nClients; i++ {
+			ic := i
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				gomega.NewGomegaWithT(t).Eventually(func() [32]byte {
+					answer, err := clientContracts[ic].Contract.LastResponse(nil)
+					require.NoError(t, err)
+					return answer
+				}, 1*time.Minute, 1*time.Second).Should(gomega.Equal(utils.GetExpectedResponse(requestSources[ic])))
+			}()
+		}
+		wg.Wait()
 	}
-	wg.Wait()
 }

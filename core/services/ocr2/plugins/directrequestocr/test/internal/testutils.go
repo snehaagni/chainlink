@@ -132,7 +132,7 @@ func SetRegistryConfig(t *testing.T, owner *bind.TransactOpts, registryContract 
 	require.NoError(t, err)
 }
 
-func CreateAndFundSubscriptions(t *testing.T, owner *bind.TransactOpts, linkToken *link_token_interface.LinkToken, registryContractAddress common.Address, registryContract *ocr2dr_registry.OCR2DRRegistry, clientContracts []deployedClientContract) (subscriptionId uint64) {
+func CreateAndFundSubscriptions(t *testing.T, owner *bind.TransactOpts, linkToken *link_token_interface.LinkToken, registryContractAddress common.Address, registryContract *ocr2dr_registry.OCR2DRRegistry, clientContracts []deployedClientContract, iterations int64) (subscriptionId uint64) {
 	_, err := registryContract.CreateSubscription(owner)
 	require.NoError(t, err)
 
@@ -147,8 +147,10 @@ func CreateAndFundSubscriptions(t *testing.T, owner *bind.TransactOpts, linkToke
 	data, err := utils.ABIEncode(`[{"type":"uint64"}]`, subscriptionID)
 	require.NoError(t, err)
 
-	amount := big.NewInt(0).Mul(big.NewInt(int64(numContracts)), big.NewInt(2e18)) // 2 LINK per client
-	_, err = linkToken.TransferAndCall(owner, registryContractAddress, amount, data)
+	linkAmount := big.NewInt(2e18)
+	amountPerIteration := big.NewInt(0).Mul(big.NewInt(int64(numContracts)), linkAmount)
+	totalAmount := big.NewInt(0).Mul(amountPerIteration, big.NewInt(iterations))
+	_, err = linkToken.TransferAndCall(owner, registryContractAddress, totalAmount, data)
 	require.NoError(t, err)
 
 	time.Sleep(1000 * time.Millisecond)
