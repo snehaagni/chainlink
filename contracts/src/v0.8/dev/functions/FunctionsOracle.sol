@@ -35,6 +35,7 @@ contract FunctionsOracle is
   error EmptyBillingRegistry();
   error InvalidRequestID();
   error UnauthorizedPublicKeyChange();
+  error OnlyOneRequestInFlight();
 
   bytes private s_donPublicKey;
   FunctionsBillingRegistryInterface private s_registry;
@@ -179,6 +180,9 @@ contract FunctionsOracle is
   ) external override registryIsSet validateAuthorizedSender returns (bytes32) {
     if (data.length == 0) {
       revert EmptyRequestData();
+    }
+    if (s_registry.pendingRequestExists(subscriptionId)) {
+      revert OnlyOneRequestInFlight();
     }
     bytes32 requestId = s_registry.startBilling(
       data,

@@ -785,15 +785,9 @@ contract FunctionsBillingRegistry is
   }
 
   /**
-   * @notice Check to see if there exists a request commitment for all consumers for a given sub.
-   * @param subscriptionId - ID of the subscription
-   * @return true if there exists at least one unfulfilled request for the subscription, false
-   * otherwise.
-   * @dev Looping is bounded to MAX_CONSUMERS*(number of DONs).
-   * @dev Used to disable subscription canceling while outstanding request are present.
+   * @inheritdoc FunctionsBillingRegistryInterface
    */
-
-  function pendingRequestExists(uint64 subscriptionId) public view returns (bool) {
+  function pendingRequestExists(uint64 subscriptionId) public view override returns (bool) {
     address[] memory consumers = s_subscriptionConfigs[subscriptionId].consumers;
     address[] memory authorizedSendersList = getAuthorizedSenders();
     for (uint256 i = 0; i < consumers.length; i++) {

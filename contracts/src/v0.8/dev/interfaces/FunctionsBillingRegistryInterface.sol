@@ -90,4 +90,14 @@ interface FunctionsBillingRegistryInterface {
    * @return owner - owner of the subscription.
    */
   function getSubscriptionOwner(uint64 subscriptionId) external view returns (address owner);
+
+  /**
+   * @notice Check to see if there exists a request commitment for all consumers for a given sub.
+   * @param subscriptionId - ID of the subscription
+   * @return true if there exists at least one unfulfilled request for the subscription, false
+   * otherwise.
+   * @dev Looping is bounded to MAX_CONSUMERS*(number of DONs).
+   * @dev Used to disable subscription canceling while outstanding request are present.
+   */
+  function pendingRequestExists(uint64 subscriptionId) external view returns (bool);
 }
