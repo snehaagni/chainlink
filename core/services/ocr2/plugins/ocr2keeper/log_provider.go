@@ -46,8 +46,17 @@ type LogProvider struct {
 
 var _ plugintypes.PerformLogProvider = (*LogProvider)(nil)
 
-func logProviderFilterName(addr common.Address) string {
-	return logpoller.FilterName("OCR2KeeperRegistry - LogProvider", addr)
+func logProviderFilter(addr common.Address) string {
+	return logpoller.Filter{
+		Name:      logpoller.FilterName("OCR2KeeperRegistry - LogProvider", addr),
+		Addresses: common.Address{addr},
+		EventSigs: []common.Hash{
+			registry.KeeperRegistryUpkeepPerformed{}.Topic(),
+			registry.KeeperRegistryReorgedUpkeepReport{}.Topic(),
+			registry.KeeperRegistryInsufficientFundsUpkeepReport{}.Topic(),
+			registry.KeeperRegistryStaleUpkeepReport{}.Topic(),
+		}
+	}
 }
 
 func NewLogProvider(
@@ -71,16 +80,7 @@ func NewLogProvider(
 
 	// Add log filters for the log poller so that it can poll and find the logs that
 	// we need.
-	err = logPoller.RegisterFilter(logpoller.Filter{
-		Name: logProviderFilterName(contract.Address()),
-		EventSigs: []common.Hash{
-			registry.KeeperRegistryUpkeepPerformed{}.Topic(),
-			registry.KeeperRegistryReorgedUpkeepReport{}.Topic(),
-			registry.KeeperRegistryInsufficientFundsUpkeepReport{}.Topic(),
-			registry.KeeperRegistryStaleUpkeepReport{}.Topic(),
-		},
-		Addresses: []common.Address{registryAddress},
-	})
+	err = logProviderFilter(contract.Address())
 	if err != nil {
 		return nil, err
 	}

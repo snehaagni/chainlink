@@ -87,7 +87,7 @@ func (f *FwdMgr) Start(ctx context.Context) error {
 		}
 		if len(fwdrs) != 0 {
 			f.initForwardersCache(ctx, fwdrs)
-			if err = f.subscribeForwardersLogs(fwdrs); err != nil {
+			if err := f.subscribeForwardersLogs(fwdrs, nil); err != nil {
 				return err
 			}
 		}
@@ -165,9 +165,6 @@ func (f *FwdMgr) getContractSenders(addr common.Address) ([]common.Address, erro
 		return nil, errors.Wrapf(err, "Failed to call getAuthorizedSenders on %s", addr)
 	}
 	f.setCachedSenders(addr, senders)
-	if err = f.subscribeSendersChangedLogs(addr); err != nil {
-		return nil, err
-	}
 	return senders, nil
 }
 
@@ -196,16 +193,16 @@ func (f *FwdMgr) initForwardersCache(ctx context.Context, fwdrs []Forwarder) {
 	}
 }
 
-func (f *FwdMgr) subscribeForwardersLogs(fwdrs []Forwarder) error {
+func (f *FwdMgr) subscribeForwardersLogs(fwdrs []Forwarder, q pg.Queryer) error {
 	for _, fwdr := range fwdrs {
-		if err := f.subscribeSendersChangedLogs(fwdr.Address); err != nil {
+		if err := f.SubscribeSendersChangedLogs(fwdr.Address, q); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (f *FwdMgr) subscribeSendersChangedLogs(addr common.Address) error {
+func (f *FwdMgr) SubscribeSendersChangedLogs(addr common.Address, q pg.Queryer) error {
 	if err := f.logpoller.Ready(); err != nil {
 		f.logger.Warnw("Unable to subscribe to AuthorizedSendersChanged logs", "forwarder", addr, "err", err)
 		return nil
@@ -216,7 +213,7 @@ func (f *FwdMgr) subscribeSendersChangedLogs(addr common.Address) error {
 			Name:      FilterName(addr),
 			EventSigs: []common.Hash{authChangedTopic},
 			Addresses: []common.Address{addr},
-		})
+		}, q)
 	return err
 }
 

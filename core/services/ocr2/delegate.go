@@ -11,6 +11,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 
+	"github.com/google/uuid"
+	"github.com/smartcontractkit/chainlink-relay/pkg/types"
 	libocr2 "github.com/smartcontractkit/libocr/offchainreporting2"
 	ocr2types "github.com/smartcontractkit/libocr/offchainreporting2/types"
 	ocr2keepers "github.com/smartcontractkit/ocr2keepers/pkg"
@@ -20,10 +22,11 @@ import (
 	"github.com/smartcontractkit/sqlx"
 
 	"github.com/smartcontractkit/chainlink-relay/pkg/loop"
-	"github.com/smartcontractkit/chainlink-relay/pkg/types"
+
 	"github.com/smartcontractkit/chainlink/v2/plugins"
 
 	"github.com/smartcontractkit/chainlink/v2/core/chains/evm"
+	evmlogpoller "github.com/smartcontractkit/chainlink/v2/core/chains/evm/logpoller"
 	"github.com/smartcontractkit/chainlink/v2/core/logger"
 	"github.com/smartcontractkit/chainlink/v2/core/services/job"
 	"github.com/smartcontractkit/chainlink/v2/core/services/keystore"
@@ -50,6 +53,14 @@ import (
 	"github.com/smartcontractkit/chainlink/v2/core/services/telemetry"
 	"github.com/smartcontractkit/chainlink/v2/core/utils"
 )
+
+type ErrNonOCR2JobType struct {
+	job.Job
+}
+
+func (e ErrNonOCR2JobType) Error() string {
+	return fmt.Sprintf("ocr2.Delegate.OnDeleteJob called with wrong job type, ignoring non-OCR2 job %v", e.Job)
+}
 
 type Delegate struct {
 	db                    *sqlx.DB
@@ -119,6 +130,85 @@ func (d *Delegate) BeforeJobCreated(spec job.Job) {
 	// This is only called first time the job is created
 	d.isNewlyCreatedJob = true
 }
+
+func (d *Delegate) validateAndParseSpec(jb job.Job) evmlogpoller.LogPoller {
+	spec := jb.OCR2OracleSpec
+	if spec == nil {
+		d.lggr.Error(ErrNonOCR2JobType{jb})
+		return nil
+	}
+	if spec.Relay != relay.EVM {
+		return nil
+	}
+	chainID, err := spec.RelayConfig.EVMChainID()
+	if err != nil {
+		d.lggr.Errorw("Failed to read chainID from OCR2 job spec", "err", err, "spec", spec)
+		return nil
+	}
+	chain, err := d.chainSet.Get(big.NewInt(chainID))
+	if err != nil {
+		d.lggr.Error(err)
+		return nil
+	}
+
+	return chain.LogPoller()
+}
+
+func (d *Delegate) filtersFromSpec(spec *job.OCR2OracleSpec, extJobID uuid.UUID) (filters []evmlogpoller.Filter) {
+	var err error
+	switch spec.PluginType {
+	case job.OCR2VRF:
+		filters, err = ocr2coordinator.FiltersFromSpec(spec)
+		if err != nil {
+			d.lggr.Errorw("failed to derive ocr2vrf filter names from spec", "err", err, "spec", spec)
+		}
+	case job.OCR2Keeper:
+		filters, err = ocr2keeper.FiltersFromSpec(spec)
+		if err != nil {
+			d.lggr.Errorw("failed to derive ocr2keeper filter names from spec", "err", err, "spec", spec)
+		}
+	default:
+		return nil
+	}
+
+	rargs := types.RelayArgs{
+		ExternalJobID: extJobID,
+		JobID:         spec.ID,
+		ContractID:    spec.ContractID,
+		New:           true,
+		RelayConfig:   spec.RelayConfig.Bytes(),
+	}
+
+	relayFilters, err := evmrelay.FiltersFromRelayArgs(rargs)
+	if err != nil {
+		d.lggr.Errorw("Failed to derive evm relay filter names from relay args", "err", err, "rargs", rargs)
+		return nil
+	}
+
+	filters = append(filters, relayFilters...)
+	return filters
+}
+
+func (d *Delegate) OnCreateJob(jb job.Job, q pg.Queryer) error {
+	lp := d.validateAndParseSpec(jb)
+	if lp == nil {
+		return nil
+	}
+
+	filters := d.filtersFromSpec(jb.OCR2OracleSpec, jb.ExternalJobID)
+	if filters == nil {
+		return nil
+	}
+
+	for _, filter := range filters {
+		d.lggr.Debugf("Registering new filter %s", filter)
+		if err := lp.RegisterFilter(filter, q); err != nil {
+			return errors.Wrapf(err, "Failed to register filter %s", filter)
+		}
+	}
+	return nil
+}
+
 func (d *Delegate) AfterJobCreated(spec job.Job)  {}
 func (d *Delegate) BeforeJobDeleted(spec job.Job) {}
 func (d *Delegate) OnDeleteJob(jb job.Job, q pg.Queryer) error {
@@ -129,63 +219,18 @@ func (d *Delegate) OnDeleteJob(jb job.Job, q pg.Queryer) error {
 	//  an inconsistent state.  This assumes UnregisterFilter will return nil if the filter wasn't found
 	//  at all (no rows deleted).
 
-	spec := jb.OCR2OracleSpec
-	if spec == nil {
-		d.lggr.Errorf("offchainreporting2.Delegate.OnDeleteJob called with wrong job type, ignoring non-OCR2 spec %v", jb)
+	lp := d.validateAndParseSpec(jb)
+	if lp == nil {
 		return nil
 	}
-	if spec.Relay != relay.EVM {
+	filters := d.filtersFromSpec(jb.OCR2OracleSpec, jb.ExternalJobID)
+	if filters == nil {
 		return nil
 	}
-
-	chainID, err := spec.RelayConfig.EVMChainID()
-	if err != nil {
-		d.lggr.Errorf("OCR2 jobs spec missing chainID")
-		return nil
-	}
-	chain, err := d.chainSet.Get(big.NewInt(chainID))
-	if err != nil {
-		d.lggr.Error(err)
-		return nil
-	}
-	lp := chain.LogPoller()
-
-	var filters []string
-	switch spec.PluginType {
-	case job.OCR2VRF:
-		filters, err = ocr2coordinator.FilterNamesFromSpec(spec)
-		if err != nil {
-			d.lggr.Errorw("failed to derive ocr2vrf filter names from spec", "err", err, "spec", spec)
-		}
-	case job.OCR2Keeper:
-		filters, err = ocr2keeper.FilterNamesFromSpec(spec)
-		if err != nil {
-			d.lggr.Errorw("failed to derive ocr2keeper filter names from spec", "err", err, "spec", spec)
-		}
-	default:
-		return nil
-	}
-
-	rargs := types.RelayArgs{
-		ExternalJobID: jb.ExternalJobID,
-		JobID:         spec.ID,
-		ContractID:    spec.ContractID,
-		New:           false,
-		RelayConfig:   spec.RelayConfig.Bytes(),
-	}
-
-	relayFilters, err := evmrelay.FilterNamesFromRelayArgs(rargs)
-	if err != nil {
-		d.lggr.Errorw("Failed to derive evm relay filter names from relay args", "err", err, "rargs", rargs)
-		return nil
-	}
-
-	filters = append(filters, relayFilters...)
 
 	for _, filter := range filters {
 		d.lggr.Debugf("Unregistering %s filter", filter)
-		err = lp.UnregisterFilter(filter, q)
-		if err != nil {
+		if err := lp.UnregisterFilter(filter.Name, q); err != nil {
 			return errors.Wrapf(err, "Failed to unregister filter %s", filter)
 		}
 	}
@@ -196,7 +241,7 @@ func (d *Delegate) OnDeleteJob(jb job.Job, q pg.Queryer) error {
 func (d *Delegate) ServicesForSpec(jb job.Job) ([]job.ServiceCtx, error) {
 	spec := jb.OCR2OracleSpec
 	if spec == nil {
-		return nil, errors.Errorf("offchainreporting2.Delegate expects an *job.Offchainreporting2OracleSpec to be present, got %v", jb)
+		return nil, ErrNonOCR2JobType{jb}
 	}
 	if !spec.TransmitterID.Valid {
 		return nil, errors.Errorf("expected a transmitterID to be specified")
