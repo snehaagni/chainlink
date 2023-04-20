@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/crypto/curve25519"
 
-	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2/types"
+	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 )
 
 var _ ocrtypes.OffchainKeyring = &OffchainKeyring{}

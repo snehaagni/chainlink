@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 
 	"github.com/pkg/errors"
-	"github.com/smartcontractkit/libocr/commontypes"
-	libocr2 "github.com/smartcontractkit/libocr/offchainreporting2"
 
 	relaymercury "github.com/smartcontractkit/chainlink-relay/pkg/reportingplugins/mercury"
 	relaytypes "github.com/smartcontractkit/chainlink-relay/pkg/types"
+	"github.com/smartcontractkit/libocr/commontypes"
+	libocr2 "github.com/smartcontractkit/libocr/offchainreporting2plus"
 
 	"github.com/smartcontractkit/chainlink/v2/core/logger"
 	"github.com/smartcontractkit/chainlink/v2/core/services/job"
@@ -28,7 +28,7 @@ func NewServices(
 	pipelineRunner pipeline.Runner,
 	runResults chan pipeline.Run,
 	lggr logger.Logger,
-	argsNoPlugin libocr2.OracleArgs,
+	argsNoPlugin libocr2.MercuryOracleArgs,
 	cfg Config,
 	me commontypes.MonitoringEndpoint,
 ) ([]job.ServiceCtx, error) {
@@ -53,7 +53,7 @@ func NewServices(
 		runResults,
 		me,
 	)
-	argsNoPlugin.ReportingPluginFactory = relaymercury.NewFactory(
+	argsNoPlugin.MercuryPluginFactory = relaymercury.NewFactory(
 		ds,
 		lggr,
 		ocr2Provider.OnchainConfigCodec(),
