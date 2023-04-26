@@ -32,7 +32,6 @@ import (
 
 	"github.com/smartcontractkit/sqlx"
 
-	"github.com/smartcontractkit/chainlink/v2/core/build"
 	"github.com/smartcontractkit/chainlink/v2/core/chains/evm/txmgr"
 	evmtypes "github.com/smartcontractkit/chainlink/v2/core/chains/evm/types"
 	"github.com/smartcontractkit/chainlink/v2/core/logger"
@@ -271,7 +270,7 @@ func (cli *Client) runNode(c *clipkg.Context) error {
 
 	lggr.Infow(fmt.Sprintf("Starting Chainlink Node %s at commit %s", static.Version, static.Sha), "Version", static.Version, "SHA", static.Sha)
 
-	if cli.Config.Dev() || build.Dev {
+	if cli.Config.Dev() {
 		lggr.Warn("Chainlink is running in DEVELOPMENT mode. This is a security risk if enabled in production.")
 	}
 
