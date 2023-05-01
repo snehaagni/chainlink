@@ -60,10 +60,12 @@ require (
 	github.com/scylladb/go-reflectx v1.0.1
 	github.com/shirou/gopsutil/v3 v3.22.12
 	github.com/shopspring/decimal v1.3.1
+	github.com/smartcontractkit/chainlink-cosmos v0.1.7-0.20230501143435-e21d4d0d7c8a
 	github.com/smartcontractkit/chainlink-relay v0.1.7-0.20230501152247-777ad2acec9d
 	github.com/smartcontractkit/chainlink-solana v1.0.3-0.20230501143522-22fc1daaef73
+	github.com/smartcontractkit/chainlink-starknet/relayer v0.0.0-20230501143535-c29c0b851783
 	// WARNING: Experimental version of libocr - do not merge until this is officially released!
-	github.com/smartcontractkit/libocr v0.0.0-20230428143950-b8c4d1923d16
+	github.com/smartcontractkit/libocr v0.0.0-20230501142723-b6f19cbd2c74
 	github.com/smartcontractkit/ocr2keepers v0.6.15-0.20230501143604-90dddd91b5bc
 	github.com/smartcontractkit/ocr2vrf v0.0.0-20230501155230-68abe41eec24
 	github.com/smartcontractkit/sqlx v1.3.5-0.20210805004948-4be295aacbeb
@@ -96,11 +98,6 @@ require (
 )
 
 require contrib.go.opencensus.io/exporter/stackdriver v0.13.5 // indirect
-
-require (
-	github.com/smartcontractkit/chainlink-cosmos v0.1.7-0.20230501143435-e21d4d0d7c8a
-	github.com/smartcontractkit/chainlink-starknet/relayer v0.0.0-20230501143535-c29c0b851783
-)
 
 require (
 	filippo.io/edwards25519 v1.0.0-rc.1 // indirect
