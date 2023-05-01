@@ -58,7 +58,7 @@ type Delegate struct {
 	peerWrapper           *ocrcommon.SingletonPeerWrapper
 	monitoringEndpointGen telemetry.MonitoringEndpointGenerator
 	chainSet              evm.ChainSet
-	cfg                   Config
+	cfg                   DeletgateConfigurer
 	lggr                  logger.Logger
 	ks                    keystore.OCR2
 	dkgSignKs             keystore.DKGSign
@@ -69,9 +69,21 @@ type Delegate struct {
 	mailMon               *utils.MailboxMonitor
 }
 
-type Config interface {
-	validate.Config
-	plugins.EnvConfig
+type DeletgateConfigurer interface {
+	validate.Configurer
+	plugins.EnvConfigurer
+}
+
+type DelegateConfig struct {
+	validate.Configurer
+	plugins.EnvConfigurer
+}
+
+func NewDelegateConfig(vc validate.Configurer, pluginEnv plugins.EnvConfigurer) *DelegateConfig {
+	return &DelegateConfig{
+		Configurer:    vc,
+		EnvConfigurer: pluginEnv,
+	}
 }
 
 var _ job.Delegate = (*Delegate)(nil)
@@ -84,7 +96,7 @@ func NewDelegate(
 	monitoringEndpointGen telemetry.MonitoringEndpointGenerator,
 	chainSet evm.ChainSet,
 	lggr logger.Logger,
-	cfg Config,
+	cfg DeletgateConfigurer,
 	ks keystore.OCR2,
 	dkgSignKs keystore.DKGSign,
 	dkgEncryptKs keystore.DKGEncrypt,
@@ -365,7 +377,8 @@ func (d *Delegate) ServicesForSpec(jb job.Job) ([]job.ServiceCtx, error) {
 		}
 		eaMonitoringEndpoint := d.monitoringEndpointGen.GenMonitoringEndpoint(spec.ContractID, synchronization.EnhancedEA)
 		errorLog := &errorLog{jobID: jb.ID, recordError: d.jobORM.RecordError}
-		return median.NewMedianServices(ctx, jb, d.isNewlyCreatedJob, relayer, d.pipelineRunner, runResults, lggr, oracleArgsNoPlugin, d.cfg, eaMonitoringEndpoint, errorLog)
+		mConfig := median.NewMedianConfig(d.cfg.JobPipelineMaxSuccessfulRuns(), d.cfg)
+		return median.NewMedianServices(ctx, jb, d.isNewlyCreatedJob, relayer, d.pipelineRunner, runResults, lggr, oracleArgsNoPlugin, mConfig, eaMonitoringEndpoint, errorLog)
 	case job.DKG:
 		chainID, err2 := spec.RelayConfig.EVMChainID()
 		if err2 != nil {
